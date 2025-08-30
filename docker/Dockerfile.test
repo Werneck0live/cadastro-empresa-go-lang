@@ -1,0 +1,17 @@
+FROM golang:1.23
+
+ENV PATH="/usr/local/go/bin:${PATH}" \
+    CGO_ENABLED=1
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends make git build-essential jq \
+ && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+COPY go.mod go.sum ./
+RUN go env -w GOPROXY=https://proxy.golang.org,https://goproxy.io,direct && go mod download
+
+COPY . .
+
+CMD ["bash","/app/docker/run-tests.sh"]

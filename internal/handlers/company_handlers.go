@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -223,7 +222,6 @@ func (h *CompanyHandler) CompanyByID(w http.ResponseWriter, r *http.Request) {
 		utils.WriteJSON(w, http.StatusOK, map[string]string{"id": id})
 
 	case http.MethodPut:
-		log.Println("Teste")
 		var dto CompanyPutDTO
 		if err := utils.DecodeStrict(r.Body, &dto); err != nil {
 			utils.BadRequest(w, utils.FormatUnknownFieldError(err))
