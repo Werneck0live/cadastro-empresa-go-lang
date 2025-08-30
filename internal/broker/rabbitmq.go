@@ -2,6 +2,7 @@ package broker
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	amqp "github.com/rabbitmq/amqp091-go"
@@ -63,11 +64,14 @@ func (p *Publisher) Publish(ctx context.Context, body string, headers amqp.Table
 	)
 }
 
-func (p *Publisher) Close() {
+func (p *Publisher) Close() error {
+	var errCh, errConn error
 	if p.ch != nil {
-		_ = p.ch.Close()
+		errCh = p.ch.Close()
 	}
 	if p.conn != nil {
-		_ = p.conn.Close()
+		errConn = p.conn.Close()
 	}
+
+	return errors.Join(errCh, errConn)
 }

@@ -31,10 +31,12 @@ func main() {
 	if err != nil {
 		log.Fatalf("rabbitmq connect error: %v", err)
 	}
-	defer pub.Close()
+
+	defer func() { _ = pub.Close() }()
 
 	repo := repository.NewCompanyRepository(database)
-	h := &handlers.CompanyHandler{Repo: repo, Pub: pub}
+	// h := &handlers.CompanyHandler{Repo: repo, Pub: pub}
+	h := &handlers.CompanyHandler{repo, pub}
 
 	// Padronização das requisições
 	mux := http.NewServeMux()

@@ -10,17 +10,40 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rabbitmq/amqp091-go"
 	amqp "github.com/rabbitmq/amqp091-go"
 
-	"github.com/Werneck0live/cadastro-empresa/internal/broker"
 	"github.com/Werneck0live/cadastro-empresa/internal/models"
 	"github.com/Werneck0live/cadastro-empresa/internal/repository"
 	"github.com/Werneck0live/cadastro-empresa/internal/utils"
 )
 
+type Repository interface {
+	GetAll(ctx context.Context, limit, skip int64) ([]models.Company, error)
+	Create(ctx context.Context, c *models.Company) (string, error)
+	GetByID(ctx context.Context, id string) (*models.Company, error)
+	Update(ctx context.Context, id string, upd *models.Company) error
+	Replace(ctx context.Context, id string, doc *models.Company) error
+	Delete(ctx context.Context, id string) error
+}
+
+// type Publisher interface {
+// 	Publish(ctx context.Context, payload []byte) error
+// 	Close() error
+// }
+
+type Publisher interface {
+	Publish(ctx context.Context, body string, headers amqp091.Table) error
+	Close() error
+}
+
 type CompanyHandler struct {
-	Repo *repository.CompanyRepository
-	Pub  *broker.Publisher
+	Repo Repository
+	Pub  Publisher
+}
+
+func NewCompanyHandler(repo Repository, pub Publisher) *CompanyHandler {
+	return &CompanyHandler{Repo: repo, Pub: pub}
 }
 
 // garantir que a requisição venha no padrão /api/companies/{id_company}
