@@ -20,7 +20,10 @@
 
 # docker compose -f docker/docker-compose.yml down && sudo docker rmi $(sudo docker images -qa) && docker compose -f docker/docker-compose.yml up -d --force-recreate
 
-# LOGS
+# --------------------- RABBIT ---------------------
+# http://localhost:15672/#/queues
+
+# --------------------- LOGS ---------------------
 # docker compose -f docker/docker-compose.yml  logs -f api
 
 # --------------------- TESTES --------------------- 
@@ -31,5 +34,11 @@
 # só unitários
 # docker compose -f docker/docker-compose.yml --profile test run --rm -e RUN_INT=0 ci
 
-# seed
+# --------------------- SEEDER ---------------------
 # docker compose -f docker/docker-compose.yml --profile admin build admin-seed --no-cache && docker compose -f docker/docker-compose.yml --profile admin run --rm admin-seed
+
+# --------------------- WEB SOCKET ---------------------
+# docker compose -f docker/docker-compose.yml up -d ws && docker compose -f docker/docker-compose.yml logs -f ws
+
+# testar
+# wscat -c ws://localhost:8090/ws

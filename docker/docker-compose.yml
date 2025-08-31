@@ -79,6 +79,21 @@ services:
       - MONGO_DB=${MONGO_DB:-empresasdb}
       - LOG_LEVEL=info
     entrypoint: ["/usr/local/bin/api", "-task", "seed"]
+  
+  ws:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.ws
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      - WS_ADDR=:8090
+      - LOG_LEVEL=info
+      - RABBIT_URI=${RABBIT_URI:-amqp://guest:guest@rabbitmq:5672/}
+      - RABBIT_QUEUE=${RABBIT_QUEUE:-empresas_log}
+    ports:
+      - "8090:8090"
 
 volumes:
   mongo_data:
