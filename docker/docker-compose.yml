@@ -22,13 +22,13 @@ services:
       timeout: 3s
       retries: 20
   api:
-    image: golang:1.22-alpine
+    image: golang:1.23-alpine
     working_dir: /app
     # entry-point - c/ comandos para poder alterar o código
     # e verificar em tempo real (sem precisar reiniciar o container)
     entrypoint: ["/bin/sh", "-c", "/app/docker/dev-entrypoint.sh"]
     volumes:
-      - .:/app
+      - ..:/app
     environment:
       - PORT=8080
       - MONGO_URI=mongodb://mongo:27017
@@ -66,6 +66,19 @@ services:
       GOFLAGS: -buildvcs=false
     entrypoint: ["bash","-lc"]
     command: ["/app/docker/run-tests.sh"] 
+  admin-seed:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile     # sua imagem “prod” com o binário /usr/local/bin/api
+    profiles: ["admin"]
+    depends_on:
+      mongo:
+        condition: service_healthy
+    environment:
+      - MONGO_URI=${MONGO_URI:-mongodb://mongo:27017}
+      - MONGO_DB=${MONGO_DB:-empresasdb}
+      - LOG_LEVEL=info
+    entrypoint: ["/usr/local/bin/api", "-task", "seed"]
 
 volumes:
   mongo_data:

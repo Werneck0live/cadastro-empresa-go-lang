@@ -138,7 +138,7 @@ func (h *CompanyHandler) CompanyByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// log.Printf("Método usado: ", r.Method)
+	// slog.Info("Método usado: ", r.Method)
 
 	switch r.Method {
 	case http.MethodGet:
@@ -228,9 +228,9 @@ func (h *CompanyHandler) CompanyByID(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := validatePutDTO(dto); err != nil {
-			// log.Println("\n\n\n\n\n\n\n")
-			// log.Println("%v", err)
-			// log.Println("Teste")
+			// slog.Info("\n\n\n\n\n\n\n")
+			// slog.Info("%v", err)
+			// slog.Info("Teste")
 			utils.BadRequest(w, err.Error())
 			return
 		}

@@ -16,14 +16,20 @@
 #   1001+ → 5%
 #   Empresas com <100 não têm exigência mínima.
 
-# sudo docker stop $(sudo docker ps -qa) && sudo docker rm $(sudo docker ps -qa) && sudo docker rmi $(sudo docker images -qa) && sudo docker compose -f docker-compose.yml up -d
-# docker compose down && docker compose up -d --force-recreate
+# docker compose -f docker/docker-compose.yml down &&  sudo docker stop $(sudo docker ps -qa) && sudo docker rm $(sudo docker ps -qa) && sudo docker rmi $(sudo docker images -qa) && sudo docker compose -f docker/docker-compose.yml up -d
 
+# docker compose -f docker/docker-compose.yml down && sudo docker rmi $(sudo docker images -qa) && docker compose -f docker/docker-compose.yml up -d --force-recreate
+
+# LOGS
+# docker compose -f docker/docker-compose.yml  logs -f api
 
 # --------------------- TESTES --------------------- 
 # Agora os testes rodam sem instalar pacotes a cada execução:
-# docker compose run --rm --profile ci tests
-#  docker compose --profile ci build tests --no-cache && docker compose --profile ci run --rm test
+# docker compose  -f docker/docker-compose.yml  down && sudo docker compose up  -f docker/docker-compose.yml  -d
+# docker compose -f docker/docker-compose.yml --profile test build ci --no-cache && docker compose -f docker/docker-compose.yml --profile test run --rm ci
 
-# só unitários:
+# só unitários
 # docker compose -f docker/docker-compose.yml --profile test run --rm -e RUN_INT=0 ci
+
+# seed
+# docker compose -f docker/docker-compose.yml --profile admin build admin-seed --no-cache && docker compose -f docker/docker-compose.yml --profile admin run --rm admin-seed
