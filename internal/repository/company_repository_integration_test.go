@@ -3,25 +3,25 @@
 
 package repository
 
-/*
-	Para Rodar: go test -tags=integration -v ./internal/repository -run TestCompanyRepository_Integration -count=1
-
-	obs: Rodar todos os de integração: go test -tags=integration -v ./... -count=1
-*/
-
 import (
 	"context"
 	"testing"
 	"time"
 
-	tc "github.com/testcontainers/testcontainers-go"
-	"github.com/testcontainers/testcontainers-go/modules/mongodb"
+	/*
+		Para Rodar: go test -tags=integration -v ./internal/repository -run TestCompanyRepository_Integration -count=1
+
+		obs: Rodar todos os de integração: go test -tags=integration -v ./... -count=1
+	*/
 
 	"github.com/Werneck0live/cadastro-empresa/internal/db"
 	"github.com/Werneck0live/cadastro-empresa/internal/models"
+	"github.com/Werneck0live/cadastro-empresa/internal/utils"
+	tc "github.com/testcontainers/testcontainers-go"
+	"github.com/testcontainers/testcontainers-go/modules/mongodb"
 )
 
-// Exercita: Create -> GetByID -> Update -> Replace -> Delete
+// Testa os métodos: Create -> GetByID -> Update -> Replace -> Delete
 func TestCompanyRepository_Integration_CreateGetUpdateReplaceDelete(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -38,7 +38,7 @@ func TestCompanyRepository_Integration_CreateGetUpdateReplaceDelete(t *testing.T
 		t.Fatalf("conn string: %v", err)
 	}
 
-	// Conecta com seu helper
+	// Conecta com o helper
 	client, err := db.NewMongoClient(uri)
 	if err != nil {
 		t.Fatalf("mongo client: %v", err)
@@ -46,7 +46,7 @@ func TestCompanyRepository_Integration_CreateGetUpdateReplaceDelete(t *testing.T
 	t.Cleanup(func() { _ = client.Disconnect(ctx) })
 
 	database := client.Database("testdb")
-	repo := NewCompanyRepository(database) // do seu pacote repository
+	repo := NewCompanyRepository(database) // do pacote do repository
 
 	// 1) Create
 	now := time.Now().UTC()
@@ -77,14 +77,28 @@ func TestCompanyRepository_Integration_CreateGetUpdateReplaceDelete(t *testing.T
 		t.Fatalf("get mismatch: %#v", got)
 	}
 
-	// 3) Update (parcial)
+	if got.NumeroMinimoPCDExigidos != utils.ComputeMinPCD(got.NumeroMinimoPCDExigidos) {
+		t.Fatalf("fail calc pcd (create-method): got=%d", got.NumeroMinimoPCDExigidos)
+	}
+
+	// 3) Update (patch - parcial)
 	err = repo.Update(ctx, id, &models.Company{NomeFantasia: "ACME NEW"})
 	if err != nil {
-		t.Fatalf("update: %v", err)
+		t.Fatalf("update 'NomeFantasia': %v", err)
 	}
 	got2, err := repo.GetByID(ctx, id)
 	if err != nil || got2 == nil || got2.NomeFantasia != "ACME NEW" {
 		t.Fatalf("after update mismatch: %#v err=%v", got2, err)
+	}
+
+	// ComputeMinPCD
+	err = repo.Update(ctx, id, &models.Company{NumeroFuncionarios: 102})
+	if err != nil {
+		t.Fatalf("update 'NumeroFuncionarios': %v", err)
+	}
+	got3, err := repo.GetByID(ctx, id)
+	if got3.NumeroMinimoPCDExigidos != utils.ComputeMinPCD(got3.NumeroMinimoPCDExigidos) {
+		t.Fatalf("fail calc pcd (update-method): got=%d", got3.NumeroMinimoPCDExigidos)
 	}
 
 	// 4) Replace (PUT)
@@ -94,16 +108,21 @@ func TestCompanyRepository_Integration_CreateGetUpdateReplaceDelete(t *testing.T
 		NomeFantasia:       "ACME REPLACED",
 		RazaoSocial:        "ACME S.A.",
 		Endereco:           "Rua Y, 456",
-		NumeroFuncionarios: 80,
+		NumeroFuncionarios: 210,
 		CreatedAt:          got.CreatedAt, // preserve
 		UpdatedAt:          time.Now().UTC(),
 	}
 	if err := repo.Replace(ctx, id, &newDoc); err != nil {
 		t.Fatalf("replace: %v", err)
 	}
-	got3, err := repo.GetByID(ctx, id)
-	if err != nil || got3 == nil || got3.NomeFantasia != "ACME REPLACED" {
-		t.Fatalf("after replace mismatch: %#v err=%v", got3, err)
+
+	got4, err := repo.GetByID(ctx, id)
+	if err != nil || got4 == nil || got4.NomeFantasia != "ACME REPLACED" {
+		t.Fatalf("after replace mismatch: %#v err=%v", got4, err)
+	}
+
+	if got4.NumeroMinimoPCDExigidos != utils.ComputeMinPCD(got4.NumeroMinimoPCDExigidos) {
+		t.Fatalf("fail calc pcd (put-method): got=%d", got4.NumeroMinimoPCDExigidos)
 	}
 
 	// 5) Delete

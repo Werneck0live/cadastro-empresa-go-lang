@@ -1,34 +1,39 @@
-# docker/Dockerfile.ws
 FROM golang:1.23-alpine AS build
 WORKDIR /app
 RUN apk add --no-cache git ca-certificates
-
-# Evita erro de VCS stamping (quando não há .git no build)
 ENV GOFLAGS="-buildvcs=false"
 
-# 1) Copia só os manifests (melhor aproveitamento de cache)
-COPY go.mod go.sum ./
-RUN go env -w GOPROXY=https://proxy.golang.org,https://goproxy.io,direct \
- && go mod download
+# proxy resiliente
+RUN go env -w GOPROXY=https://proxy.golang.org,https://goproxy.io,direct
 
-# 2) Copia o restante do código (inclui cmd/ws e internal/ws)
+# cache de módulos
+COPY go.mod go.sum ./
+RUN go mod download
+
+# código
 COPY . .
 
-# 3) Gera/atualiza vendor (você quer manter -mod=vendor por enquanto)
-#RUN go mod tidy && go mod vendor
-RUN set -eux; pwd; ls -la; test -f go.mod || (echo "MISSING go.mod" && exit 1); \
-    ls -la cmd || true; ls -la cmd/ws || true
+RUN set -eux; \
+    go version; \
+    test -f go.mod && echo "ok go.mod"; \
+    ls -la cmd/ws || true; \
+    echo "== go list -m all =="; go list -m all | head -n 50; \
+    echo "== go build -x -v =="; \
+    CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -mod=mod -x -v -o /bin/ws ./cmd/ws
 
+# 🔧 se algum build antigo deixou vendor/ dentro da imagem, remove
+RUN rm -rf vendor
 
-# 4) Compila usando vendor
+# build ignorando vendor explicitamente
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
-    go build -mod=vendor -trimpath -o /bin/ws ./cmd/ws
+    go build -mod=mod -trimpath -ldflags="-s -w" \
+    -o /bin/ws ./cmd/ws
 
-# Runtime
 FROM alpine:3.20
 RUN adduser -D -u 10001 appuser
 WORKDIR /home/appuser
 COPY --from=build /bin/ws /usr/local/bin/ws
-USER appuser
+STOPSIGNAL SIGTERM
 EXPOSE 8090
+USER appuser
 ENTRYPOINT ["/usr/local/bin/ws"]

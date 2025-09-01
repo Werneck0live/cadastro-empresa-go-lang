@@ -1,5 +1,10 @@
 package ws
 
+/*
+
+go test -run 'TestHub_Broadcast' -v ./internal/ws -count=1
+
+*/
 import (
 	"log/slog"
 	"testing"

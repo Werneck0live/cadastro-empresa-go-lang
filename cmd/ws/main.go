@@ -1,12 +1,8 @@
 package main
 
 import (
-	"bufio"
 	"context"
-	"flag"
-	"fmt"
 	"log/slog"
-	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -21,28 +17,6 @@ import (
 	"github.com/Werneck0live/cadastro-empresa/internal/ws"
 )
 
-type wsConfig struct {
-	Addr         string // ex.: ":8090"
-	RabbitURI    string
-	RabbitQ      string
-	ReadTimeout  time.Duration
-	WriteTimeout time.Duration
-}
-
-func loadWSConfig(cfg *config.Config) wsConfig {
-	addr := os.Getenv("WS_ADDR")
-	if addr == "" {
-		addr = ":8090"
-	}
-	return wsConfig{
-		Addr:         addr,
-		RabbitURI:    cfg.RabbitURI,
-		RabbitQ:      cfg.RabbitQueue,
-		ReadTimeout:  10 * time.Second,
-		WriteTimeout: 10 * time.Second,
-	}
-}
-
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
@@ -51,19 +25,11 @@ var upgrader = websocket.Upgrader{
 }
 
 func main() {
-	cfg := config.Load()
-	_ = config.InitLogger(cfg.LogLevel)
+
+	wscfg := config.LoadWSConfig()
+
+	_ = config.InitLogger(wscfg.LogLevel)
 	log := slog.Default().With("svc", "ws")
-
-	// admin task opcional p/ futuro (ex.: -task noop)
-	task := flag.String("task", "", "admin task (optional)")
-	flag.Parse()
-	if *task != "" {
-		log.Info("admin_task", "task", *task)
-		return
-	}
-
-	wscfg := loadWSConfig(cfg)
 	hub := ws.NewHub(log)
 	go hub.Run()
 
@@ -81,10 +47,7 @@ func main() {
 	// encaminha mensagens do Rabbit para o hub
 	go func() {
 		for d := range deliveries {
-			// aqui você pode normalizar/enriquecer msg, se quiser
-			msg := strings.TrimSpace(string(d.Body))
-			hub.Broadcast([]byte(msg))
-			// auto-ack já estava true; se mudar, chame d.Ack(false)
+			hub.Broadcast(d.Body)
 		}
 		log.Warn("deliveries_channel_closed")
 	}()
@@ -105,6 +68,7 @@ func main() {
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
+	// O servidor é inicializado e começa a escutar na porta configurada
 	go func() {
 		log.Info("ws_listen", "addr", wscfg.Addr)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
@@ -118,7 +82,7 @@ func main() {
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 	<-stop
 
-	ctx, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), wscfg.ShutdownTimeout)
 	defer cancel()
 	_ = srv.Shutdown(ctx)
 	hub.Stop()
@@ -126,7 +90,7 @@ func main() {
 	log.Info("stopped")
 }
 
-func startRabbitConsumer(c wsConfig, log *slog.Logger) (*amqp.Connection, *amqp.Channel, <-chan amqp.Delivery, error) {
+func startRabbitConsumer(c *config.WSConfig, log *slog.Logger) (*amqp.Connection, *amqp.Channel, <-chan amqp.Delivery, error) {
 	conn, err := amqp.Dial(c.RabbitURI) // <-- aqui tinha "c RabbitURI"
 	if err != nil {
 		return nil, nil, nil, err
@@ -139,7 +103,7 @@ func startRabbitConsumer(c wsConfig, log *slog.Logger) (*amqp.Connection, *amqp.
 	}
 
 	if _, err = ch.QueueDeclare(
-		c.RabbitQ, // <-- e aqui idem: use c.RabbitQ
+		c.RabbitQueue, // <-- e aqui idem: use c.RabbitQ
 		true, false, false, false, nil,
 	); err != nil {
 		_ = ch.Close()
@@ -154,7 +118,7 @@ func startRabbitConsumer(c wsConfig, log *slog.Logger) (*amqp.Connection, *amqp.
 	}
 
 	deliveries, err := ch.Consume(
-		c.RabbitQ,
+		c.RabbitQueue,
 		"ws-consumer",
 		true, false, false, false, nil,
 	)
@@ -163,7 +127,7 @@ func startRabbitConsumer(c wsConfig, log *slog.Logger) (*amqp.Connection, *amqp.
 		_ = conn.Close()
 		return nil, nil, nil, err
 	}
-	log.Info("rabbit_consumer_started", "queue", c.RabbitQ)
+	log.Info("rabbit_consumer_started", "queue", c.RabbitQueue)
 	return conn, ch, deliveries, nil
 }
 
@@ -176,8 +140,10 @@ func handleWS(hub *ws.Hub, w http.ResponseWriter, r *http.Request, log *slog.Log
 
 	client := &ws.Client{Send: make(chan []byte, 256)}
 	hub.Register(client)
+	log.Info("ws_client_connected", "id", client.ID)
 
 	// writer
+	// Envia mensagens para o WebSocket do cliente sempre que uma nova mensagem é recebida pelo hub
 	go func() {
 		defer func() { _ = conn.Close() }()
 		for msg := range client.Send {
@@ -188,7 +154,7 @@ func handleWS(hub *ws.Hub, w http.ResponseWriter, r *http.Request, log *slog.Log
 		}
 	}()
 
-	// reader (descarta frames do cliente; usado só p/ detectar fechamento)
+	// Detecta o fechamento do WebSocket e lida com a recepção de mensagens
 	go func() {
 		defer func() {
 			hub.Unregister(client)
@@ -227,25 +193,10 @@ func (w *statusRW) Write(b []byte) (int, error) {
 	return n, err
 }
 
-// Delegar Flush (para streaming) se o writer de baixo tiver
-func (w *statusRW) Flush() {
-	if f, ok := w.ResponseWriter.(http.Flusher); ok {
-		f.Flush()
-	}
-}
-
-// Delegar Hijack (necessário para websocket)
-func (w *statusRW) Hijack() (net.Conn, *bufio.ReadWriter, error) {
-	h, ok := w.ResponseWriter.(http.Hijacker)
-	if !ok {
-		return nil, nil, fmt.Errorf("underlying writer does not support hijacking")
-	}
-	return h.Hijack()
-}
-
+// Loga as requisições HTTP, incluindo o método, status, n. de bytes e ttl
 func logMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Se é upgrade para websocket, não embrulhe o ResponseWriter!
+		// Se é upgrade para websocket, não embrulha o ResponseWriter!
 		if strings.EqualFold(r.Header.Get("Connection"), "Upgrade") ||
 			strings.EqualFold(r.Header.Get("Upgrade"), "websocket") ||
 			r.URL.Path == "/ws" {

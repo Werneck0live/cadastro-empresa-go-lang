@@ -1,24 +1,5 @@
 package handlers
 
-import (
-	"bytes"
-	"context"
-	"encoding/json"
-	"errors"
-	"net/http"
-	"net/http/httptest"
-	"testing"
-	"time"
-
-	"github.com/Werneck0live/cadastro-empresa/internal/models"
-	"github.com/Werneck0live/cadastro-empresa/internal/repository"
-
-	amqp091 "github.com/rabbitmq/amqp091-go"
-)
-
-const validCNPJ = "11.222.333/0001-81"
-const companyID = "11222333000181" // corresponde ao 11.222.333/0001-81
-
 /*
 RODAR TODOS OS TESTES:
 
@@ -26,13 +7,36 @@ go test -run 'TestCompanies_List_|TestCompanyByID_Get_|TestCompanies_Create_|Tes
 
 */
 
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/Werneck0live/cadastro-empresa/internal/models"
+	"github.com/Werneck0live/cadastro-empresa/internal/repository"
+	"github.com/Werneck0live/cadastro-empresa/internal/utils"
+
+	amqp091 "github.com/rabbitmq/amqp091-go"
+)
+
+const validCNPJ = "11.222.333/0001-81"
+const companyID = "11222333000181"      // corresponde ao 11.222.333/0001-81
+const otherValidCNPJ = "76986532000101" // corresponde ao 11.222.333/0001-81
+
 // 1)  GET (ListAll) - go test -run 'TestCompanies_List_' -v ./internal/handlers -count=1
 
 func TestCompanies_List(t *testing.T) {
 
 	rm := &repoMock{
 		GetAllFn: func(_ context.Context, limit, skip int64) ([]models.Company, error) {
-			// (opcional) valida se o handler aplicou corretamente os query params
+			// valida se o handler aplicou corretamente os query params
 			if limit != 10 || skip != 0 {
 				t.Fatalf("params: want limit=10, skip=0; got limit=%d skip=%d", limit, skip)
 			}
@@ -66,53 +70,48 @@ func TestCompanies_List(t *testing.T) {
 	}
 }
 
-// Parâmetros padrão (sem limit/skip → usa 50/0)
-func TestCompanies_List_DefaultParams(t *testing.T) {
-	rm := &repoMock{
-		GetAllFn: func(_ context.Context, limit, skip int64) ([]models.Company, error) {
-			if limit != 50 || skip != 0 {
-				t.Fatalf("defaults: want limit=50 skip=0; got %d %d", limit, skip)
-			}
-			return nil, nil
-		},
-	}
-	h := &CompanyHandler{Repo: rm, Pub: &pubMock{}}
-
-	req := httptest.NewRequest(http.MethodGet, "/api/companies", nil)
-	rr := httptest.NewRecorder()
-	h.Companies(rr, req)
-
-	if rr.Code != http.StatusOK {
-		t.Fatalf("status=%d want=%d body=%s", rr.Code, http.StatusOK, rr.Body.String())
-	}
-}
-
 /*
-Validação de faixa (limit inválido → handler deve cair no default e não quebrar).
-Ex.: limit=9999 (seu código aceita até 200).
+Validação de faixa (limit inválido - handler deve cair no default e não quebrar).
+Ex.: limit=9999 (o código aceita até 200).
 */
-func TestCompanies_List_LimitOutOfRange(t *testing.T) {
-	rm := &repoMock{
-		GetAllFn: func(_ context.Context, limit, skip int64) ([]models.Company, error) {
-			// como 9999 é >200, handler deve usar 50 (default)
-			if limit != 50 {
-				t.Fatalf("want limit=50 got=%d", limit)
-			}
-			return nil, nil
-		},
+func TestCompanies_List_LimitParsing(t *testing.T) {
+	cases := []struct {
+		name      string
+		q         string
+		wantLimit int64
+	}{
+		{"default", "", 50},
+		{"valid_min", "?limit=1", 1},
+		{"valid_mid", "?limit=73", 73},
+		{"valid_max", "?limit=200", 200},
+		{"too_large", "?limit=9999", 50},
+		{"zero", "?limit=0", 50},
+		{"negative", "?limit=-10", 50},
+		{"non_numeric", "?limit=abc", 50},
 	}
-	h := &CompanyHandler{Repo: rm, Pub: &pubMock{}}
 
-	req := httptest.NewRequest(http.MethodGet, "/api/companies?limit=9999", nil)
-	rr := httptest.NewRecorder()
-	h.Companies(rr, req)
-
-	if rr.Code != http.StatusOK {
-		t.Fatalf("status=%d want=%d", rr.Code, http.StatusOK)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			rm := &repoMock{
+				GetAllFn: func(_ context.Context, limit, skip int64) ([]models.Company, error) {
+					if limit != tc.wantLimit {
+						t.Fatalf("want limit=%d got=%d", tc.wantLimit, limit)
+					}
+					return nil, nil
+				},
+			}
+			h := &CompanyHandler{Repo: rm, Pub: &pubMock{}}
+			req := httptest.NewRequest(http.MethodGet, "/api/companies"+tc.q, nil)
+			rr := httptest.NewRecorder()
+			h.Companies(rr, req)
+			if rr.Code != http.StatusOK {
+				t.Fatalf("status=%d want=%d", rr.Code, http.StatusOK)
+			}
+		})
 	}
 }
 
-// Erro do repositório → 500
+// Erro do repositório (500)
 func TestCompanies_List_RepoError(t *testing.T) {
 	rm := &repoMock{
 		GetAllFn: func(_ context.Context, _, _ int64) ([]models.Company, error) {
@@ -254,13 +253,18 @@ func TestCompanies_Create_Valid(t *testing.T) {
 	if got.CNPJ == "" || got.ID == "" {
 		t.Fatalf("payload inesperado: %#v", got)
 	}
+
+	if got.NumeroMinimoPCDExigidos != utils.ComputeMinPCD(got.NumeroMinimoPCDExigidos) {
+		t.Fatalf("pcd incorreto: got=%d", got.NumeroMinimoPCDExigidos)
+	}
 }
 
 // ---------- 400 BAD REQUEST (JSON inválido)
 func TestCompanies_Create_InvalidJSON(t *testing.T) {
 	h := &CompanyHandler{Repo: &repoMock{}, Pub: &pubMock{}}
 
-	req := httptest.NewRequest(http.MethodPost, "/api/companies", bytes.NewBufferString(`{`)) // JSON quebrado
+	// JSON quebrado - bytes.NewBufferString(`{`)
+	req := httptest.NewRequest(http.MethodPost, "/api/companies", bytes.NewBufferString(`{`))
 	req.Header.Set("Content-Type", "application/json")
 	rr := httptest.NewRecorder()
 
@@ -275,8 +279,9 @@ func TestCompanies_Create_InvalidJSON(t *testing.T) {
 func TestCompanies_Create_InvalidCNPJ(t *testing.T) {
 	h := &CompanyHandler{Repo: &repoMock{}, Pub: &pubMock{}}
 
+	// cnpj inválido
 	body := bytes.NewBufferString(`{
-		"cnpj": "xx",
+		"cnpj": "xx", 
 		"nome_fantasia": "ACME"
 	}`)
 	req := httptest.NewRequest(http.MethodPost, "/api/companies", body)
@@ -362,12 +367,38 @@ func TestCompanyByID_Put_Replace_OK(t *testing.T) {
 
 // ---------- 400 BAD REQUEST (cnpj do body diferente do {id})
 func TestCompanyByID_Put_CNPJMismatch(t *testing.T) {
-	h := &CompanyHandler{Repo: &repoMock{}, Pub: &pubMock{}}
-	body := bytes.NewBufferString(`{
-		"cnpj": "00.000.000/0000-00",
-		"nome_fantasia": "ACME"
-	}`)
-	req := httptest.NewRequest(http.MethodPut, "/api/companies/"+companyID, body)
+	idCNPJ := validCNPJ        // CNPJ do recurso na URL (válido)
+	bodyCNPJ := otherValidCNPJ // outro CNPJ válido e diferente do idCNPJ
+
+	// mock do repo: recurso EXISTE (para não cair em 404)
+	rm := &repoMock{
+		GetByIDFn: func(_ context.Context, id string) (*models.Company, error) {
+			if id != utils.SanitizeCNPJ(idCNPJ) {
+				t.Fatalf("id inesperado: %s", id)
+			}
+			return &models.Company{
+				ID:   utils.SanitizeCNPJ(idCNPJ),
+				CNPJ: utils.SanitizeCNPJ(idCNPJ),
+			}, nil
+		},
+		// Replace NÃO deve ser chamado, pois o handler retorna 400 antes
+		ReplaceFn: func(_ context.Context, _ string, _ *models.Company) error {
+			t.Fatalf("Replace não deveria ser chamado em caso de mismatch")
+			return nil
+		},
+	}
+
+	h := &CompanyHandler{Repo: rm, Pub: &pubMock{}}
+
+	body := bytes.NewBufferString(fmt.Sprintf(`{
+        "cnpj": "%s",
+        "nome_fantasia": "ACME",
+        "razao_social": "ACME LTDA",
+        "endereco": "Rua X",
+        "numero_funcionarios": 123
+    }`, bodyCNPJ))
+
+	req := httptest.NewRequest(http.MethodPut, "/api/companies/"+utils.SanitizeCNPJ(idCNPJ), body)
 	req.Header.Set("Content-Type", "application/json")
 	rr := httptest.NewRecorder()
 
@@ -375,6 +406,9 @@ func TestCompanyByID_Put_CNPJMismatch(t *testing.T) {
 
 	if rr.Code != http.StatusBadRequest {
 		t.Fatalf("status=%d want=%d body=%s", rr.Code, http.StatusBadRequest, rr.Body.String())
+	}
+	if !strings.Contains(rr.Body.String(), "cnpj in body must match") {
+		t.Fatalf("esperava mensagem de mismatch; body=%s", rr.Body.String())
 	}
 }
 

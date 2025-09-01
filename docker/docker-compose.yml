@@ -33,8 +33,8 @@ services:
       - PORT=8080
       - MONGO_URI=mongodb://mongo:27017
       - MONGO_DB=empresasdb
-      - RABBIT_URI=amqp://guest:guest@rabbitmq:5672/
-      - RABBIT_QUEUE=empresas_log
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
+      - RABBITMQ_QUEUE=empresas_log 
     ports: ["8080:8080"]
     depends_on:
       mongo:
@@ -67,19 +67,19 @@ services:
     entrypoint: ["bash","-lc"]
     command: ["/app/docker/run-tests.sh"] 
   admin-seed:
+    profiles: ["admin"]
     build:
       context: ..
-      dockerfile: docker/Dockerfile     # sua imagem “prod” com o binário /usr/local/bin/api
-    profiles: ["admin"]
+      dockerfile: docker/Dockerfile
+    entrypoint: ["/usr/local/bin/api"]
+    command: ["-task","seed"]
+    environment:
+      - MONGO_URI=mongodb://mongo:27017
+      - MONGO_DB=empresasdb
+      - LOG_LEVEL=info
     depends_on:
       mongo:
         condition: service_healthy
-    environment:
-      - MONGO_URI=${MONGO_URI:-mongodb://mongo:27017}
-      - MONGO_DB=${MONGO_DB:-empresasdb}
-      - LOG_LEVEL=info
-    entrypoint: ["/usr/local/bin/api", "-task", "seed"]
-  
   ws:
     build:
       context: ..
@@ -90,8 +90,11 @@ services:
     environment:
       - WS_ADDR=:8090
       - LOG_LEVEL=info
-      - RABBIT_URI=${RABBIT_URI:-amqp://guest:guest@rabbitmq:5672/}
-      - RABBIT_QUEUE=${RABBIT_QUEUE:-empresas_log}
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
+      - RABBIT_URI=amqp://guest:guest@rabbitmq:5672/
+      - RABBITMQ_QUEUE=empresas_log
+      - RABBIT_QUEUE=empresas_log
+      - LOG_LEVEL=info
     ports:
       - "8090:8090"
 

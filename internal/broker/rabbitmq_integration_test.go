@@ -20,12 +20,12 @@ import (
 	"github.com/testcontainers/testcontainers-go/wait"
 )
 
-// Sobe RabbitMQ real, publica com seu Publisher e consome pela lib para validar mensagem
+// Sobe RabbitMQ real, publica com o Publisher e consome pela lib para validar a mensagem
 func TestRabbitMQ_PublishAndConsume(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 
-	// Sobe container RabbitMQ
+	// Sobe container do RabbitMQ
 	req := tc.ContainerRequest{
 		Image:        "rabbitmq:3.13",
 		ExposedPorts: []string{"5672/tcp"},
@@ -49,7 +49,7 @@ func TestRabbitMQ_PublishAndConsume(t *testing.T) {
 	uri := fmt.Sprintf("amqp://guest:guest@%s:%s/", host, port.Port())
 	queue := "companies_test"
 
-	// Publisher do seu código
+	// Publisher
 	pub, err := NewPublisher(uri, queue)
 	if err != nil {
 		t.Fatalf("new publisher: %v", err)

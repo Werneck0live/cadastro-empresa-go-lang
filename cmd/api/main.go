@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"log/slog"
+	"math/rand"
 	"net/http"
 	"os"
 	"os/signal"
@@ -20,40 +21,25 @@ import (
 	"github.com/Werneck0live/cadastro-empresa/internal/repository"
 )
 
-// cmd/api/main.go
-func main() {
-	cfg := config.Load() // .env
+// var _ handlers.Publisher = (*NoopPublisher)(nil)
 
-	// Logger JSON "global" - permite usar slog.Info/slog.Error/Warn em qualquer lugar
+// type NoopPublisher struct{}
+
+// func (NoopPublisher) Publish(ctx context.Context, body string, headers amqp091.Table) error {
+// 	return nil
+// }
+// func (NoopPublisher) Close() error { return nil }
+
+func main() {
+	var (
+		task = flag.String("task", "", "admin task: seed|migrate|index")
+	)
+	flag.Parse()
+
+	cfg := config.Load()
+
 	_ = config.InitLogger(cfg.LogLevel)
 	slog.Info("starting", "port", cfg.Port, "mongo_db", cfg.MongoDB)
-
-	// HOOK: admin job (one-off)
-	task := flag.String("task", "", "admin task: seed")
-	flag.Parse()
-	if *task != "" {
-		switch *task {
-		case "seed":
-			// conecta somente o necessário para o seed
-			client, err := db.NewMongoClient(cfg.MongoURI)
-			if err != nil {
-				slog.Error("mongo_connect_error", "err", err)
-				os.Exit(1)
-			}
-			defer func() { _ = client.Disconnect(context.Background()) }()
-
-			repo := repository.NewCompanyRepository(client.Database(cfg.MongoDB))
-			if err := admin.SeedCompanies(context.Background(), repo, slog.Default()); err != nil {
-				slog.Error("seed_failed", "err", err)
-				os.Exit(1)
-			}
-			slog.Info("seed_done")
-			return // encerra o processo sem subir HTTP
-		default:
-			slog.Error("unknown_admin_task", "task", *task)
-			os.Exit(2)
-		}
-	}
 
 	// conecta Mongo
 	client, err := db.NewMongoClient(cfg.MongoURI)
@@ -62,14 +48,35 @@ func main() {
 	}
 	defer func() { _ = client.Disconnect(context.Background()) }()
 
-	// publisher (Rabbit)
-	pub, err := broker.NewPublisher(cfg.RabbitURI, cfg.RabbitQueue)
+	// repo ANTES do switch (seed precisa dele)
+	repo := repository.NewCompanyRepository(client.Database(cfg.MongoDB))
+
+	// --- ADMIN TASKS Ex.: rodar as seeds - (rodam e saem)
+	switch *task {
+	case "seed":
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		if err := admin.SeedCompanies(ctx, repo, slog.Default()); err != nil {
+			slog.Error("seed_error", "err", err)
+			os.Exit(1)
+		}
+		slog.Info("seed_done")
+		return
+
+	case "migrate", "index":
+		slog.Info("task_not_implemented", "task", *task)
+		return
+	}
+
+	// --- Modo servidor normal: conecta Rabbit com backoff
+	pub, err := connectRabbitWithRetry(cfg.RabbitURI, cfg.RabbitQueue, 60*time.Second, slog.Default())
 	if err != nil {
-		log.Fatalf("rabbitmq connect error: %v", err)
+		slog.Error("rabbitmq_connect_error", "uri", cfg.RabbitURI, "err", err)
+		os.Exit(1)
 	}
 	defer pub.Close()
 
-	repo := repository.NewCompanyRepository(client.Database(cfg.MongoDB))
 	h := &handlers.CompanyHandler{Repo: repo, Pub: pub}
 
 	mux := http.NewServeMux()
@@ -98,8 +105,7 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := srv.Shutdown(ctx); err != nil {
-		// log.Printf("graceful shutdown error: %v", err)
-		slog.Error("graceful shutdown error", "err", err)
+		slog.Error("graceful_shutdown_error", "err", err)
 	}
 }
 
@@ -108,11 +114,38 @@ func logMiddleware(next http.Handler) http.Handler {
 		start := time.Now()
 		next.ServeHTTP(w, r)
 		dur := time.Since(start)
-		// log.Printf("%s %s %s", r.Method, r.URL.Path, fmtDuration(dur))
-		slog.Info("%s %s %s", r.Method, r.URL.Path, fmtDuration(dur))
+		// usando slog com campos estruturados
+		slog.Info("http_request",
+			"method", r.Method, "path", r.URL.Path, "duration", fmtDuration(dur),
+		)
 	})
 }
 
-func fmtDuration(d time.Duration) string {
-	return fmt.Sprintf("%dms", d.Milliseconds())
+func fmtDuration(d time.Duration) string { return fmt.Sprintf("%dms", d.Milliseconds()) }
+
+// retorna *broker.Publisher (implementa handlers.Publisher)
+func connectRabbitWithRetry(uri, queue string, maxWait time.Duration, log *slog.Logger) (*broker.Publisher, error) {
+	deadline := time.Now().Add(maxWait)
+	base := 200 * time.Millisecond
+	for attempt := 1; ; attempt++ {
+		pub, err := broker.NewPublisher(uri, queue)
+		if err == nil {
+			return pub, nil
+		}
+		if time.Now().After(deadline) {
+			return nil, err
+		}
+		sleep := time.Duration(1<<uint(min(attempt, 6))) * base
+		jitter := time.Duration(rand.Int63n(int64(sleep / 3)))
+		wait := sleep/2 + jitter
+		slog.Warn("rabbit_connect_retry", "attempt", attempt, "wait", wait, "err", err)
+		time.Sleep(wait)
+	}
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
