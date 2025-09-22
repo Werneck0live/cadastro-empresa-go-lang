@@ -1,0 +1,86 @@
+[
+  {
+    "cnpj": "12.345.678/0001-95",
+    "nome_fantasia": "ACME",
+    "razao_social": "ACME LTDA",
+    "endereco": "Rua A, 123",
+    "numero_funcionarios": 120
+  },
+  {
+    "cnpj": "98.765.432/0001-10",
+    "nome_fantasia": "Umbrella",
+    "razao_social": "UMBRELLA S.A.",
+    "endereco": "Av B, 456",
+    "numero_funcionarios": 42
+  },
+  {
+    "cnpj": "15.674.839/0001-20",
+    "nome_fantasia": "TechNova",
+    "razao_social": "TechNova Tecnologia Ltda",
+    "endereco": "Rua Nova, 789",
+    "numero_funcionarios": 300
+  },
+  {
+    "cnpj": "23.789.015/0001-45",
+    "nome_fantasia": "MegaStore",
+    "razao_social": "MegaStore Comércio Ltda",
+    "endereco": "Av Central, 1010",
+    "numero_funcionarios": 500
+  },
+  {
+    "cnpj": "54.321.987/0001-66",
+    "nome_fantasia": "GreenFoods",
+    "razao_social": "GreenFoods Alimentação S/A",
+    "endereco": "Rua Verde, 232",
+    "numero_funcionarios": 75
+  },
+  {
+    "cnpj": "65.432.109/0001-77",
+    "nome_fantasia": "AutoMotive",
+    "razao_social": "AutoMotive Indústria e Comércio Ltda",
+    "endereco": "Rua Motor, 155",
+    "numero_funcionarios": 150
+  },
+  {
+    "cnpj": "21.345.678/0001-88",
+    "nome_fantasia": "CloudTech",
+    "razao_social": "CloudTech Soluções Ltda",
+    "endereco": "Av Tecnologia, 345",
+    "numero_funcionarios": 40
+  },
+  {
+    "cnpj": "11.223.344/0001-99",
+    "nome_fantasia": "PetWorld",
+    "razao_social": "PetWorld Comércio de Produtos Ltda",
+    "endereco": "Rua dos Animais, 567",
+    "numero_funcionarios": 25
+  },
+  {
+    "cnpj": "87.654.321/0001-00",
+    "nome_fantasia": "BrightSolutions",
+    "razao_social": "BrightSolutions Consultoria Ltda",
+    "endereco": "Rua Brilhante, 678",
+    "numero_funcionarios": 120
+  },
+  {
+    "cnpj": "34.567.890/0001-11",
+    "nome_fantasia": "FastDelivery",
+    "razao_social": "FastDelivery Logística Ltda",
+    "endereco": "Av Expressa, 890",
+    "numero_funcionarios": 200
+  },
+  {
+    "cnpj": "98.761.234/0001-22",
+    "nome_fantasia": "FashionPlus",
+    "razao_social": "FashionPlus Comércio S/A",
+    "endereco": "Rua das Roupas, 456",
+    "numero_funcionarios": 60
+  },
+  {
+    "cnpj": "12.345.987/0001-33",
+    "nome_fantasia": "TechGenius",
+    "razao_social": "TechGenius Desenvolvimento Ltda",
+    "endereco": "Av Inovação, 321",
+    "numero_funcionarios": 180
+  }
+]

@@ -1,0 +1,105 @@
+services:
+  mongo:
+    image: mongo:7
+    ports: ["27017:27017"]
+    volumes: ["mongo_data:/data/db"]
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    ports:
+      - "5672:5672"  
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  api:
+    image: golang:1.23-alpine
+    working_dir: /app
+    # entry-point - c/ comandos para poder alterar o código
+    # e verificar em tempo real (sem precisar reiniciar o container)
+    entrypoint: ["/bin/sh", "-c", "/app/docker/dev-entrypoint.sh"]
+    volumes:
+      - ..:/app
+    environment:
+      - PORT=8080
+      - MONGO_URI=mongodb://mongo:27017
+      - MONGO_DB=empresasdb
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
+      - RABBITMQ_QUEUE=empresas_log 
+    ports: ["8080:8080"]
+    depends_on:
+      mongo:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    restart: unless-stopped
+  ci:
+    profiles: ["test"]  # <<<< SÓ INICIA (os testes) qnd vc pedir esse profile (docker compose run --rm --profile ci tests | docker compose --profile ci up tests)
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.test
+    working_dir: /app
+    volumes:
+      - ..:/app
+      - /var/run/docker.sock:/var/run/docker.sock   # necessário p/ testcontainers
+      # No go test, é comum ter falha de download do módulo durante a executação do processo
+      # Pq é intermitente do proxy.golang.org dentro do container.
+      # Por isso, está sendo cacheado o diretório de módulos entre execuções
+      - gomodcache:/go/pkg/mod
+      - gobuildcache:/root/.cache/go-build
+    environment:
+      TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE: /var/run/docker.sock
+      RUN_INT: "1"
+      # O Go tenta “carimbar” metadados do VCS (git) no build dos testes 
+      # Dentro do container isso costuma falhar (exit 128) porque 
+      # o .git não está acessível do jeito que o Go espera. Por isso
+      # destativando a flag build_vcs
+      GOFLAGS: -buildvcs=false
+    entrypoint: ["bash","-lc"]
+    command: ["/app/docker/run-tests.sh"] 
+  admin-seed:
+    profiles: ["admin"]
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    entrypoint: ["/usr/local/bin/api"]
+    command: ["-task","seed"]
+    environment:
+      - MONGO_URI=mongodb://mongo:27017
+      - MONGO_DB=empresasdb
+      - LOG_LEVEL=info
+    depends_on:
+      mongo:
+        condition: service_healthy
+  ws:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.ws
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      - WS_ADDR=:8090
+      - LOG_LEVEL=info
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
+      - RABBIT_URI=amqp://guest:guest@rabbitmq:5672/
+      - RABBITMQ_QUEUE=empresas_log
+      - RABBIT_QUEUE=empresas_log
+      - LOG_LEVEL=info
+    ports:
+      - "8090:8090"
+    restart: unless-stopped
+
+volumes:
+  mongo_data:
+  gomodcache:
+  gobuildcache:

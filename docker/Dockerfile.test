@@ -1,0 +1,21 @@
+# docker/Dockerfile.test
+FROM golang:1.23
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends make git build-essential \
+ && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# cache de deps
+COPY go.mod go.sum ./
+RUN go env -w GOPROXY=https://proxy.golang.org,https://goproxy.io,direct \
+ && go mod download
+
+COPY . .
+ENV CGO_ENABLED=1
+
+# (opcional) deixar explícito o PATH do Go
+ENV PATH="/usr/local/go/bin:${PATH}"
+
+CMD ["bash","/app/docker/run-tests.sh"]

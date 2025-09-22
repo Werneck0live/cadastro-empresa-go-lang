@@ -1,0 +1,11 @@
+root = "/app"
+tmp_dir = "/app/tmp"
+
+[build]
+cmd = "CGO_ENABLED=0 go build -trimpath -buildvcs=false -o /app/tmp/api /app/cmd/api"
+bin = "/app/tmp/api"
+include_ext = ["go"]
+exclude_dir = ["vendor","tmp",".git","docker"]
+
+[log]
+time = true
